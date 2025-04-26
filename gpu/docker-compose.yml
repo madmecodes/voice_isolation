@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  voice-isolation:
+    build: .
+    volumes:
+      - ./:/app
+      - ../audio:/audio
+    stdin_open: true  # Keep STDIN open
+    tty: true         # Allocate a pseudo-TTY
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
