@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow:2.12.1-gpu
+FROM tensorflow/tensorflow:latest-gpu
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
