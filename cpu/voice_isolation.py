@@ -4,6 +4,7 @@ import time
 import logging
 import traceback
 from pathlib import Path
+import psutil
 from spleeter.separator import Separator
 
 # Set up logging
@@ -95,7 +96,7 @@ def main():
             os.makedirs(temp_output_dir, exist_ok=True)
             logger.info(f"Created temporary directory: {temp_output_dir}")
 
-            # Process audio with timing
+            # Process audio with timing and performance metrics
             print(f"Processing '{input_path.name}' to isolate vocals...")
             print(f"File size: {file_size_mb:.2f} MB - This may take a while for larger files.")
             print("Processing... (Check logs for details)")
@@ -107,14 +108,11 @@ def main():
             start_time = time.time()
             logger.info(f"Starting separation process for {input_path.name}")
             
-            # Memory usage before processing
-            try:
-                import psutil
-                process = psutil.Process(os.getpid())
-                mem_before = process.memory_info().rss / 1024 / 1024
-                logger.info(f"Memory usage before processing: {mem_before:.2f} MB")
-            except ImportError:
-                logger.info("psutil not available, skipping memory usage tracking")
+            # Performance metrics
+            process = psutil.Process(os.getpid())
+            start_cpu = process.cpu_times()
+            mem_before = process.memory_info().rss / (1024 * 1024)
+            logger.info(f"Memory usage before processing: {mem_before:.2f} MB")
             
             try:
                 separator.separate_to_file(str(input_path), str(temp_output_dir))
@@ -124,19 +122,27 @@ def main():
                 logger.error(traceback.format_exc())
                 raise
             
-            # Memory usage after processing
-            try:
-                import psutil
-                mem_after = process.memory_info().rss / 1024 / 1024
-                logger.info(f"Memory usage after processing: {mem_after:.2f} MB")
-                logger.info(f"Memory increase: {mem_after - mem_before:.2f} MB")
-            except ImportError:
-                pass
-            
+            # End performance metrics
             end_time = time.time()
+            end_cpu = process.cpu_times()
+            mem_after = process.memory_info().rss / (1024 * 1024)
             processing_time = end_time - start_time
+            cpu_time = (end_cpu.user - start_cpu.user) + (end_cpu.system - start_cpu.system)
+            mem_increase = mem_after - mem_before
             formatted_time = format_time(processing_time)
+            
+            # FLOPS/cycle calculation
+            params = 100000000  # Approximate for Spleeter 2-stem model
+            estimated_flops = params * 2
+            cpu_freq = 3200000000  # 3.2 GHz, typical for modern CPUs
+            estimated_cycles = cpu_time * cpu_freq
+            flops_per_cycle = estimated_flops / estimated_cycles if estimated_cycles > 0 else 0
+            
             logger.info(f"Processing completed in {formatted_time}")
+            logger.info(f"CPU time: {format_time(cpu_time)} (CPU usage: {cpu_time/processing_time*100:.1f}%)")
+            logger.info(f"Memory usage after processing: {mem_after:.2f} MB")
+            logger.info(f"Memory increase: {mem_increase:.2f} MB")
+            logger.info(f"FLOPS/cycle: {flops_per_cycle:.4f}")
 
             # Move and rename output
             temp_vocal_path = temp_output_dir / input_name / "vocals.wav"
@@ -151,7 +157,21 @@ def main():
                 
                 print(f"Success! Isolated vocals saved as '{output_file}'")
                 print(f"Processing time: {formatted_time}")
+                print(f"CPU time: {format_time(cpu_time)} (CPU usage: {cpu_time/processing_time*100:.1f}%)")
+                print(f"Memory usage: {mem_increase:.2f} MB")
+                print(f"FLOPS/cycle: {flops_per_cycle:.4f}")
                 print(f"Input file: {file_size_mb:.2f} MB, Output file: {output_size_mb:.2f} MB")
+                
+                # Hardware recommendation based on FLOPS/cycle
+                if flops_per_cycle > 16:
+                    print("\nRecommendation: Use GPU (AWS G4dn/G5 instances)")
+                    logger.info("Recommendation: Use GPU (AWS G4dn/G5 instances)")
+                elif flops_per_cycle > 4:
+                    print("\nRecommendation: Both CPU/GPU viable")
+                    logger.info("Recommendation: Both CPU/GPU viable")
+                else:
+                    print("\nRecommendation: CPU processing is efficient")
+                    logger.info("Recommendation: CPU processing is efficient")
             else:
                 logger.error(f"Vocal file not found at expected path: {temp_vocal_path}")
                 print("Error: Vocal isolation failed. Check input file quality.")
@@ -201,12 +221,13 @@ def main():
 
 if __name__ == "__main__":
     try:
-        # Add psutil for memory tracking if not available
+        # Ensure psutil is available for performance metrics
         try:
             import psutil
         except ImportError:
-            logger.warning("psutil not installed. Memory tracking will be disabled.")
-            print("Note: For better memory tracking, consider adding psutil to the container.")
+            logger.critical("psutil is required for performance metrics. Please install it.")
+            print("Error: psutil is required for performance metrics. Install it with 'pip install psutil'.")
+            sys.exit(1)
         
         main()
     except Exception as e:

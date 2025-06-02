@@ -1,4 +1,8 @@
-# Voice Isolation Tool
+# Better Use Google Colab
+
+https://colab.research.google.com/drive/1Ss849YhhpBCejdGxh07-PrTJbplTtYTD?usp=sharing
+
+# Run Locally Via Docker
 
 A Docker-based tool for isolating vocals from audio files using Spleeter, with support for both CPU and GPU processing.
 
